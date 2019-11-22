@@ -7,8 +7,8 @@
 #define PORT "8080"
 #define BACKLOG 10
 
-#define SITE "./site_content"
-#define TEST_RESPONSE "HTTP/2.0 200 OK\r\nContent-Type: text/html\r\nContent-Length: 125\r\n\r\n<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>My test page</title></head><body><p>This is my page</p></body></html>"
+#define SITE_ROOT "./site_content"
+#define TEST_RESPONSE "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 125\r\n\r\n<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>My test page</title></head><body><p>This is my page</p></body></html>"
 
 void *get_in_addr(s_sockaddr *sa)
 {
@@ -63,11 +63,90 @@ int init_listener() {
     return sockfd;
 }
 
-s_http_response handle_request(s_http_request req) {
+int ch_before_sp(const char *buf, int index) {
+    int i = 0;
+    while (buf[index] != ' ') {
+        i++;
+        index++;
+    }
+    return i;
+}
 
+char **split_request_line(const char *buf) {
+    int i = 0;
+    int s = 0;
+    char ch = buf[i];
+    int method_size;
+    int uri_size;
+    int version_size = 8;
+    method_size = ch_before_sp(buf, 0);
+    i = method_size + 1;
+    uri_size = ch_before_sp(buf, i);
+    char **split = malloc(sizeof(char *) * 3);
+    char *method = malloc(sizeof(char) * method_size + 1);
+    char *uri = malloc(sizeof(char) * uri_size + 1);
+    char *version = malloc(sizeof(char) * version_size + 1);
+    split[0] = method;
+    split[1] = uri;
+    split[2] = version;
+    i = 0;
+    for (int a = 0; a < method_size; a++){
+        method[a] = buf[i];
+        i++;
+    }
+    i++;
+    method[method_size] = '\0';
+    for (int a = 0; a < uri_size; a++){
+        uri[a] = buf[i];
+        i++;
+    }
+    i++;
+    uri[uri_size] = '\0';
+    for (int a = 0; a < version_size; a++){
+        version[a] = buf[i];
+        i++;
+    }
+    version[version_size] = '\0';
+    return split;
+}
+
+int parse_html_request(s_http_request *hr, const char *buf, int buf_len) {
+    // just read the first line for now
+    char **request_line = split_request_line(buf);
+    if (!strcmp(request_line[0], "GET")) {
+        hr->method = HTTP_GET;
+    }
+    else if (!strcmp(request_line[0], "POST")) {
+        hr->method = HTTP_POST;
+    }
+    hr->request_uri = malloc(sizeof(strlen(request_line[1])) + 1);
+    strcpy(hr->request_uri, request_line[1]);
+    hr->http_version = malloc(sizeof(strlen(request_line[2])) + 1);
+    strcpy(hr->http_version, request_line[2]);
+    return 1;
+}
+
+// assume a mostly valid request, just parse it and send a response
+void handle_request(int newfd) {
+    char buf[BUFSIZ];
+    int bytes_recv;
+    s_http_request hr;
+    switch (bytes_recv = recv(newfd, buf, sizeof(buf), 0)) {
+        case 0:
+            puts("server: connection closed by remote.");
+            break;
+        case -1:
+            perror("recv");
+            exit(EXIT_FAILURE);
+        default:
+            printf("server: recieved %i bytes.\n", bytes_recv);
+            puts(buf);
+    }
+    parse_html_request(&hr, buf, bytes_recv);
+    return;
 } 
 
-// create process pool, then set up listener
+// TODO: create process pool, then set up listener
 // listener should poll or similar
 // on accepting a new connection, send it a process to be handled
 int main() {
@@ -85,7 +164,7 @@ int main() {
     }
     else
         printf("server: listening on port: %s\n", PORT);
-    printf("server: waiting for connections...\n");
+    puts("server: waiting for connections...");
     while(1) {
         sin_size = sizeof(their_addr);
         newfd = accept(sockfd, (s_sockaddr *)&their_addr, &sin_size);
@@ -97,15 +176,20 @@ int main() {
             get_in_addr((s_sockaddr *)&their_addr),
             s, sizeof s);
         printf("server: got connection from %s\n", s);
-        printf("server: forking...\n");
+        puts("server: forking...");
         current_pid = fork();
         if (current_pid == 0) {
-            printf("server: sending....\n");
+            // ----- recv -----
+            handle_request(newfd);
+            
+            // ----- send -----
+            puts("server: sending....");
             close(sockfd);
             if (send(newfd, TEST_RESPONSE, sizeof(TEST_RESPONSE), 0) == -1)
                 perror("send");
+            else
+                puts(TEST_RESPONSE);
             close(newfd);
-            printf("server: sent!\n");
             exit(0);
         }
         else {

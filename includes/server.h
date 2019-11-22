@@ -21,21 +21,21 @@ typedef struct sockaddr_in6 s_sockaddr_in6;
 typedef struct sockaddr_storage s_sa_storage;
 
 enum http_method {
-    GET,
-    POST,
+    HTTP_GET,
+    HTTP_POST,
 };
 
 // no header or body yet
 typedef struct http_request {
     enum http_method method;
-    const char* request_uri;
-    int http_version;
+    char* request_uri;
+    char* http_version;
 } s_http_request;
 
 typedef struct http_response {
     int http_version;
     int status_code;
-    const char* reason;
+    char* reason;
 } s_http_response;
 
 int init_listener();
