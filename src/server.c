@@ -8,6 +8,7 @@
 #define BACKLOG 10
 
 #define SITE "./site_content"
+#define TEST_RESPONSE "HTTP/2.0 200 OK\r\nContent-Type: text/html\r\nContent-Length: 125\r\n\r\n<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>My test page</title></head><body><p>This is my page</p></body></html>"
 
 void *get_in_addr(s_sockaddr *sa)
 {
@@ -62,6 +63,10 @@ int init_listener() {
     return sockfd;
 }
 
+s_http_response handle_request(s_http_request req) {
+
+} 
+
 // create process pool, then set up listener
 // listener should poll or similar
 // on accepting a new connection, send it a process to be handled
@@ -97,7 +102,7 @@ int main() {
         if (current_pid == 0) {
             printf("server: sending....\n");
             close(sockfd);
-            if (send(newfd, "Hello, world!", 13, 0) == -1)
+            if (send(newfd, TEST_RESPONSE, sizeof(TEST_RESPONSE), 0) == -1)
                 perror("send");
             close(newfd);
             printf("server: sent!\n");

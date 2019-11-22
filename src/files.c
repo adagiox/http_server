@@ -26,5 +26,6 @@ int open_dir(const char *dirname) {
 
 int main() {
     open_dir(SITE);
+    printf("size: %i\n", sizeof("Hello\r\n"));
     return 0;    
 }
