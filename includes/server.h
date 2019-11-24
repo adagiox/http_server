@@ -25,6 +25,17 @@ enum http_method {
     HTTP_POST,
 };
 
+enum http_content_type {
+    TEXT_HTML,
+    IMAGE_JPEG,
+};
+
+typedef struct http_content {
+    enum http_content_type content_type;
+    int length;
+    void *data;
+} s_http_content;
+
 // no header or body yet
 typedef struct http_request {
     enum http_method method;
@@ -35,7 +46,8 @@ typedef struct http_request {
 typedef struct http_response {
     int http_version;
     int status_code;
-    char* reason;
+    char *reason;
+    s_http_content *content;
 } s_http_response;
 
 int init_listener();

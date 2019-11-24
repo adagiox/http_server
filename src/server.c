@@ -3,11 +3,13 @@
 //
 
 #include "server.h"
+#include "files.h"
 
 #define PORT "8080"
 #define BACKLOG 10
 
-#define SITE_ROOT "./site_content"
+#define SITE_ROOT "./site_content/"
+#define DEFAULT_PAGE "index.html"
 #define TEST_RESPONSE "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 125\r\n\r\n<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>My test page</title></head><body><p>This is my page</p></body></html>"
 
 void *get_in_addr(s_sockaddr *sa)
@@ -110,7 +112,7 @@ char **split_request_line(const char *buf) {
     return split;
 }
 
-int parse_html_request(s_http_request *hr, const char *buf, int buf_len) {
+int parse_http_request(s_http_request *hr, const char *buf, int buf_len) {
     // just read the first line for now
     char **request_line = split_request_line(buf);
     if (!strcmp(request_line[0], "GET")) {
@@ -119,6 +121,9 @@ int parse_html_request(s_http_request *hr, const char *buf, int buf_len) {
     else if (!strcmp(request_line[0], "POST")) {
         hr->method = HTTP_POST;
     }
+    else {
+        return 0;
+    }
     hr->request_uri = malloc(sizeof(strlen(request_line[1])) + 1);
     strcpy(hr->request_uri, request_line[1]);
     hr->http_version = malloc(sizeof(strlen(request_line[2])) + 1);
@@ -126,11 +131,68 @@ int parse_html_request(s_http_request *hr, const char *buf, int buf_len) {
     return 1;
 }
 
-// assume a mostly valid request, just parse it and send a response
-void handle_request(int newfd) {
+char *parse_uri(const char *uri) {
+    char *full_path;
+    if (!strcmp(uri, "/")){
+        full_path = realpath(SITE_ROOT DEFAULT_PAGE, full_path);
+    }
+    else {
+        int uri_len = strlen(uri);
+        int sr_len = strlen(SITE_ROOT);
+        char *temp_path = malloc(sizeof(char) * uri_len + sr_len + 1);
+        temp_path = strcpy(temp_path, SITE_ROOT);
+        temp_path = strncpy(temp_path + sr_len, uri, uri_len);
+        full_path = temp_path;
+    }
+    puts(full_path);
+    return full_path;
+}
+
+char *http_get_to_print() {
+
+}
+
+int get_resource(s_http_response *res, const char *path) {
+    s_http_content *content;
+    content = malloc(sizeof(content));
+    content->content_type = TEXT_HTML;
+    
+    FILE *fp = fopen(path, "r");
+    void *data = malloc(sizeof(BUFSIZ));
+    int bytes_read = 0;
+    if (!(bytes_read = fread(data, 1, BUFSIZ, fp) < BUFSIZ)) {
+        perror("get resource");
+        return -1;
+    }
+    content->data = data;
+    content->length = bytes_read;
+    res->content = content;
+    return 1;
+}
+
+char *http_get_response(s_http_request *request) {
+    char *resource_path;
+    s_http_response res;
+    char *response;
+    puts("HTTP GET RESPONSE");
+    // issue here...
+    resource_path = realpath(parse_uri(request->request_uri), resource_path);
+    puts(resource_path);
+    if (get_resource(&res, resource_path) == -1) {
+        response = "HTTP/1.0 404 Not Found\r\n\r\n";
+    }
+    return response;
+}
+
+int http_post_response(s_http_request *request) {
+    return 1;
+}
+
+// assume a mostly valid request. parse it and return a response
+void handle_request(int newfd, char *response) {
     char buf[BUFSIZ];
     int bytes_recv;
-    s_http_request hr;
+    s_http_request request;
     switch (bytes_recv = recv(newfd, buf, sizeof(buf), 0)) {
         case 0:
             puts("server: connection closed by remote.");
@@ -142,7 +204,20 @@ void handle_request(int newfd) {
             printf("server: recieved %i bytes.\n", bytes_recv);
             puts(buf);
     }
-    parse_html_request(&hr, buf, bytes_recv);
+    if (!parse_http_request(&request, buf, bytes_recv)) {
+        perror("handle request");
+        return;
+    }
+    switch(request.method) {
+        case HTTP_GET:
+            response = http_get_response(&request);
+            break;
+        case HTTP_POST:
+            http_post_response(&request);
+            break;
+        default:
+            break;
+    }
     return;
 } 
 
@@ -180,16 +255,18 @@ int main() {
         current_pid = fork();
         if (current_pid == 0) {
             // ----- recv -----
-            handle_request(newfd);
+            char *response = NULL;
+            handle_request(newfd, response);
             
             // ----- send -----
             puts("server: sending....");
             close(sockfd);
-            if (send(newfd, TEST_RESPONSE, sizeof(TEST_RESPONSE), 0) == -1)
+            if (send(newfd, response, sizeof(response), 0) == -1)
                 perror("send");
             else
-                puts(TEST_RESPONSE);
+                puts(response);
             close(newfd);
+            free(response);
             exit(0);
         }
         else {

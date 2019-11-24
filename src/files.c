@@ -1,7 +1,5 @@
 #include "files.h"
 
-#define SITE "./site_content"
-
 int open_dir(const char *dirname) {
     DIR *dp;
     struct dirent *ep;
@@ -22,9 +20,4 @@ int open_dir(const char *dirname) {
     }
 
     return 1;
-}
-
-int main() {
-    open_dir(SITE);
-    return 0;    
 }
