@@ -98,9 +98,10 @@ char *parse_uri(const char *uri) {
 }
 
 // this really sucks
-void http_to_print(s_http_response *res, char *p) {
+char *http_to_print(s_http_response *res) {
     int res_len = BUFSIZ;
     int res_p = 0;
+    char *p = NULL;
     p = malloc(sizeof(char) * res_len);
     strncpy(p, TEST_RESPONSE, strlen(TEST_RESPONSE));
     res_p += strlen(TEST_RESPONSE);
@@ -113,14 +114,15 @@ void http_to_print(s_http_response *res, char *p) {
     l = sprintf(buffer, content_length, res->content->length);
     strncpy(p+res_p, buffer, l);
     res_p += l;
-    strncpy(p+res_p, res->content->data, res->content->length + 1);
+    strncpy(p+res_p, res->content->data, res->content->length);
+    p[res_p+res->content->length] = '\0';
+    return p;
 }
 
 int get_resource(s_http_response *res, const char *path) {
     s_http_content *content;
     content = malloc(sizeof(content));
     content->content_type = TEXT_HTML;
-    puts(path);
     puts(path);
     FILE *fp = fopen(path, "r");
     if (fp == NULL) {
@@ -150,7 +152,7 @@ char *http_get_response(s_http_request *request) {
         perror("parsing uri");
     if (get_resource(&res, resource_path) == -1)
         return "HTTP/1.0 404 Not Found\r\n\r\n";
-    http_to_print(&res, response);
+    response = http_to_print(&res);
     return response;
 }
 
@@ -159,7 +161,7 @@ int http_post_response(s_http_request *request) {
 }
 
 // assume a mostly valid request. parse it and return a response
-void handle_request(int newfd, char *response) {
+void handle_request(int newfd, char **response) {
     char buf[BUFSIZ];
     int bytes_recv;
     s_http_request request;
@@ -180,7 +182,7 @@ void handle_request(int newfd, char *response) {
     }
     switch(request.method) {
         case HTTP_GET:
-            response = http_get_response(&request);
+            *response = http_get_response(&request);
             break;
         case HTTP_POST:
             http_post_response(&request);
@@ -189,7 +191,20 @@ void handle_request(int newfd, char *response) {
             break;
     }
     return;
-} 
+}
+
+void send_response(int newfd, char **response) {
+    puts("server: sending....");
+    char *res = *response;
+    puts(res);
+    int bytes_sent = 0;
+    if ((bytes_sent = send(newfd, res, strlen(res), 0)) == -1)
+        perror("send");
+    else {
+        puts(res);
+        printf("bytes_sent: %i\n", bytes_sent);
+    }
+}
 
 // TODO: create process pool, then set up listener
 // listener should poll or similar
@@ -224,17 +239,15 @@ int main() {
         puts("server: forking...");
         current_pid = fork();
         if (current_pid == 0) {
+            close(sockfd);
+
             // ----- recv -----
             char *response = NULL;
-            handle_request(newfd, response);
+            handle_request(newfd, &response);
             
             // ----- send -----
-            puts("server: sending....");
-            close(sockfd);
-            if (send(newfd, response, sizeof(response), 0) == -1)
-                perror("send");
-            else
-                puts(response);
+            send_response(newfd, &response);
+
             close(newfd);
             free(response);
             exit(0);
