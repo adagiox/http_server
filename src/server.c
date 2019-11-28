@@ -120,6 +120,9 @@ char *http_to_print(s_http_response *res) {
 }
 
 int get_resource(s_http_response *res, const char *path) {
+    if (path == NULL) {
+        return -1;
+    }
     s_http_content *content;
     content = malloc(sizeof(content));
     content->content_type = TEXT_HTML;
@@ -151,7 +154,7 @@ char *http_get_response(s_http_request *request) {
     if ((resource_path = realpath(parse_uri(request->request_uri), NULL)) == NULL)
         perror("parsing uri");
     if (get_resource(&res, resource_path) == -1)
-        return "HTTP/1.0 404 Not Found\r\n\r\n";
+        return response = from_string("HTTP/1.1 404 Not Found\r\n\r\n", strlen("HTTP/1.1 404 Not Found\r\n\r\n"));
     response = http_to_print(&res);
     return response;
 }
@@ -196,7 +199,6 @@ void handle_request(int newfd, char **response) {
 void send_response(int newfd, char **response) {
     puts("server: sending....");
     char *res = *response;
-    puts(res);
     int bytes_sent = 0;
     if ((bytes_sent = send(newfd, res, strlen(res), 0)) == -1)
         perror("send");
@@ -224,9 +226,10 @@ int main() {
     }
     else
         printf("server: listening on port: %s\n", PORT);
-    puts("server: waiting for connections...");
     while(1) {
+        puts("server: waiting for connections...");
         sin_size = sizeof(their_addr);
+        // accept blocks
         newfd = accept(sockfd, (s_sockaddr *)&their_addr, &sin_size);
         if (newfd == -1) {
             perror("server: accept");
