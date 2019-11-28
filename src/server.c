@@ -4,13 +4,15 @@
 
 #include "server.h"
 #include "files.h"
+#include "util.h"
 
 #define PORT "8080"
 #define BACKLOG 10
 
-#define SITE_ROOT "./site_content/"
-#define DEFAULT_PAGE "index.html"
-#define TEST_RESPONSE "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 125\r\n\r\n<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>My test page</title></head><body><p>This is my page</p></body></html>"
+#define SITE_ROOT "/site_content"
+#define REL_SITE_ROOT "./site_content"
+#define DEFAULT_PAGE "/index.html"
+#define TEST_RESPONSE "HTTP/1.1 200 OK\r\n"
 
 void *get_in_addr(s_sockaddr *sa)
 {
@@ -65,53 +67,6 @@ int init_listener() {
     return sockfd;
 }
 
-int ch_before_sp(const char *buf, int index) {
-    int i = 0;
-    while (buf[index] != ' ') {
-        i++;
-        index++;
-    }
-    return i;
-}
-
-char **split_request_line(const char *buf) {
-    int i = 0;
-    int s = 0;
-    char ch = buf[i];
-    int method_size;
-    int uri_size;
-    int version_size = 8;
-    method_size = ch_before_sp(buf, 0);
-    i = method_size + 1;
-    uri_size = ch_before_sp(buf, i);
-    char **split = malloc(sizeof(char *) * 3);
-    char *method = malloc(sizeof(char) * method_size + 1);
-    char *uri = malloc(sizeof(char) * uri_size + 1);
-    char *version = malloc(sizeof(char) * version_size + 1);
-    split[0] = method;
-    split[1] = uri;
-    split[2] = version;
-    i = 0;
-    for (int a = 0; a < method_size; a++){
-        method[a] = buf[i];
-        i++;
-    }
-    i++;
-    method[method_size] = '\0';
-    for (int a = 0; a < uri_size; a++){
-        uri[a] = buf[i];
-        i++;
-    }
-    i++;
-    uri[uri_size] = '\0';
-    for (int a = 0; a < version_size; a++){
-        version[a] = buf[i];
-        i++;
-    }
-    version[version_size] = '\0';
-    return split;
-}
-
 int parse_http_request(s_http_request *hr, const char *buf, int buf_len) {
     // just read the first line for now
     char **request_line = split_request_line(buf);
@@ -132,55 +87,70 @@ int parse_http_request(s_http_request *hr, const char *buf, int buf_len) {
 }
 
 char *parse_uri(const char *uri) {
-    char *full_path;
-    if (!strcmp(uri, "/")){
-        full_path = realpath(SITE_ROOT DEFAULT_PAGE, full_path);
-    }
-    else {
-        int uri_len = strlen(uri);
-        int sr_len = strlen(SITE_ROOT);
-        char *temp_path = malloc(sizeof(char) * uri_len + sr_len + 1);
-        temp_path = strcpy(temp_path, SITE_ROOT);
-        temp_path = strncpy(temp_path + sr_len, uri, uri_len);
-        full_path = temp_path;
-    }
-    puts(full_path);
-    return full_path;
+    char *rel_path;
+    if (!strcmp(uri, "/"))
+        rel_path = from_string(REL_SITE_ROOT DEFAULT_PAGE, strlen(REL_SITE_ROOT DEFAULT_PAGE));
+    else if (!strncmp(SITE_ROOT, uri, strlen(SITE_ROOT)))
+        rel_path = from_string(REL_SITE_ROOT DEFAULT_PAGE, strlen(REL_SITE_ROOT DEFAULT_PAGE));
+    else
+        rel_path = concat_root_and_uri(REL_SITE_ROOT, uri);
+    return rel_path;
 }
 
-char *http_get_to_print() {
-
+// this really sucks
+void http_to_print(s_http_response *res, char *p) {
+    int res_len = BUFSIZ;
+    int res_p = 0;
+    p = malloc(sizeof(char) * res_len);
+    strncpy(p, TEST_RESPONSE, strlen(TEST_RESPONSE));
+    res_p += strlen(TEST_RESPONSE);
+    char *content_type = "Content-Type: text/html\r\n";
+    strncpy(p+res_p, content_type, strlen(content_type));
+    res_p += strlen(content_type);
+    char *content_length = "Content-Length: %i\r\n\r\n";
+    char buffer[36];
+    int l;
+    l = sprintf(buffer, content_length, res->content->length);
+    strncpy(p+res_p, buffer, l);
+    res_p += l;
+    strncpy(p+res_p, res->content->data, res->content->length + 1);
 }
 
 int get_resource(s_http_response *res, const char *path) {
     s_http_content *content;
     content = malloc(sizeof(content));
     content->content_type = TEXT_HTML;
-    
+    puts(path);
+    puts(path);
     FILE *fp = fopen(path, "r");
+    if (fp == NULL) {
+        perror("opening resource path");
+        return -1;
+    }
     void *data = malloc(sizeof(BUFSIZ));
     int bytes_read = 0;
-    if (!(bytes_read = fread(data, 1, BUFSIZ, fp) < BUFSIZ)) {
+    if (!((bytes_read = fread(data, 1, BUFSIZ, fp)) < BUFSIZ)) {
         perror("get resource");
         return -1;
     }
     content->data = data;
     content->length = bytes_read;
     res->content = content;
+    res->status_code = 200;
+    res->reason = from_string("OK", 2);
     return 1;
 }
 
 char *http_get_response(s_http_request *request) {
-    char *resource_path;
+    char *resource_path = NULL;
     s_http_response res;
     char *response;
     puts("HTTP GET RESPONSE");
-    // issue here...
-    resource_path = realpath(parse_uri(request->request_uri), resource_path);
-    puts(resource_path);
-    if (get_resource(&res, resource_path) == -1) {
-        response = "HTTP/1.0 404 Not Found\r\n\r\n";
-    }
+    if ((resource_path = realpath(parse_uri(request->request_uri), NULL)) == NULL)
+        perror("parsing uri");
+    if (get_resource(&res, resource_path) == -1)
+        return "HTTP/1.0 404 Not Found\r\n\r\n";
+    http_to_print(&res, response);
     return response;
 }
 
