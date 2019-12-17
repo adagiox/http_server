@@ -1,5 +1,5 @@
 # http_server
-A simple http server
+A simple http server. Currently working on adding caching requests/pages.
 
 Some of the socket code adapted and referenced from [Beej's Guide to Network Programming]([1])
 
